@@ -17,7 +17,7 @@ const config = {
     OWNER_ADDRESS: process.env.OWNER_ADDRESS,
     TON_API_URL: "https://tonapi.io/v1",
     TON_API_SERVER_KEY: `Bearer ${process.env.TON_API_SERVER_KEY}`,
-    COLLECTION_URL: "https://getgems.io/collection/EQBNoiznqLZkOOpZnMe09cb3qHHs_CPEaARXj4CHqgkm3h2n?filter=%7B%22attributes%22%3A%7B%7D%7D",
+    COLLECTION_URL: "https://getgems.io/collection/EQB_24cS5G4ssIQ6DmbjeL76WuXZ164zLBFuojAlDi6x9MYp",
 }
 
 export const TON_REQ_HEADER = {

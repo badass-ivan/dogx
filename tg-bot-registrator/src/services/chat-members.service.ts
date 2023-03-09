@@ -3,20 +3,15 @@ import { ChatMembers } from "../repository/chat-members";
 
 export class ChatMembersService {
 
-    private static cachedMembers: { [address: string]: ChatMember | undefined } = {};
+    private static cachedMembers: ChatMember[] = [];
 
     static async init() {
-        const members = await ChatMembers.getAllChatMembers();
-
-        members.map(it => {
-            this.cachedMembers[it.address] = it;
-        })
-
-        console.log(`Cache inited with members: ${members.length}`)
+        this.cachedMembers = await ChatMembers.getAllChatMembers();
+        console.log(`Cache inited with members: ${this.cachedMembers.length}`)
     }
 
     static getChatMembers(): ChatMember[] {
-        return Object.values(this.cachedMembers)
+        return this.cachedMembers
     }
 
     static getChatMembersByUserId(): { [tgUserId: string]: ChatMember | undefined } {
@@ -26,7 +21,8 @@ export class ChatMembersService {
     }
 
     static async saveChatMember(chatMember: RawChatMember): Promise<ChatMember> {
-        this.cachedMembers[chatMember.address] = await ChatMembers.saveChatMember(chatMember);
-        return this.cachedMembers[chatMember.address]
+        const member = await ChatMembers.saveChatMember(chatMember);
+        this.cachedMembers.push(member);
+        return member
     }
 }

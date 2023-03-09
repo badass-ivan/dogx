@@ -3,7 +3,7 @@ import { PostgresRepository } from "./repository/postgres.repository";
 import "./utils/bind-logs";
 
 function main() {
-    PostgresRepository.init();
+    // PostgresRepository.init();
     BotService.start();
 }
 
