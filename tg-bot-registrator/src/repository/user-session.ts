@@ -18,11 +18,14 @@ export class UserSession extends Model {
     @Column({ field: "tg_user_id" })
     tgUserId: string;
 
-    @Column({ field: "address" })
+    @Column({ field: "address", allowNull: true })
     address: string;
 
-    @Column({ field: "otp" })
+    @Column({ field: "otp", allowNull: true })
     otp: string;
+
+    @Column({ field: "from_referral_link", allowNull: true })
+    fromReferralLink: string;
 
     static async getSessions(): Promise<UserSession[]> {
         return this.findAll();
@@ -37,13 +40,13 @@ export class UserSession extends Model {
     static async createOrUpdate(session: Session): Promise<UserSession> {
         console.log(`Create or update session for tgUserId: ${session.tgUserId} address: ${session.address} nfts: ${session.nfts?.length} otp: ${session.otp}`)
         const tgUserId = session.tgUserId.toString();
-        const otp = session.otp.toString();
+        const otp = session.otp?.toString() || null;
 
         const userSession = await this.findByTgUserId(session.tgUserId);
 
         if (userSession) {
             console.log(`Update session for tgUserId: ${session.tgUserId}`)
-            await UserSession.update({ otp, address: session.address }, {
+            await UserSession.update({ otp, address: session.address, fromReferralLink: session.fromReferralLink }, {
                 where: {
                     tgUserId: {
                         [Op.eq]: tgUserId
@@ -60,7 +63,8 @@ export class UserSession extends Model {
             id: uuid(),
             tgUserId,
             address: session.address,
-            otp: session.otp.toString(),
+            otp: session.otp?.toString(),
+            fromReferralLink: session.fromReferralLink,
         })
     }
 

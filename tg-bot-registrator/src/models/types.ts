@@ -11,7 +11,7 @@ export type Nft = {
         name: string,
         description: string,
         marketplace: string,
-        attributes:[{ "trait_type": string, "value": Rarity }],
+        attributes:[{ "trait_type": string, "value": string }],
         image: string
     },
     owner: {
@@ -34,7 +34,6 @@ export type Txn = {
         }
     }
 }
-
 export type NewChatMember = {
     id: number,
     is_bot: boolean,
@@ -42,30 +41,6 @@ export type NewChatMember = {
     last_name: string,
     username: string,
     language_code: string,
-}
-
-export enum Rarity {
-    Common = "Common",
-    Uncommon = "Uncommon",
-    Rare = "Rare",
-    Epic = "Epic",
-    Legendary = "Legendary",
-}
-
-export const rarityPosition = {
-    "Common": 4,
-    "Uncommon": 3,
-    "Rare": 2,
-    "Epic": 1,
-    "Legendary": 0,
-}
-
-export const colorByRarity = {
-    "Common": "🟢",
-    "Uncommon": "🔵",
-    "Rare": "🟣",
-    "Epic": "🔴",
-    "Legendary": "🟡",
 }
 
 export type RawChatMember = {
@@ -79,7 +54,8 @@ export type ChatMember = RawChatMember & {
 
 export type Session = {
     tgUserId: number,
-    address: string,
+    address?: string,
     nfts?: Nft[],
-    otp: number
+    otp?: number,
+    fromReferralLink?: string
 };

@@ -17,7 +17,7 @@
         "outDir": "dist",
         "rootDir": ".",
         "baseUrl": ".",
-        "strict": true,
+        //"strict": true,
         "lib": [
             "es2020"
         ],

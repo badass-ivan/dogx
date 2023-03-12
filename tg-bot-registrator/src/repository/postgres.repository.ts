@@ -11,7 +11,7 @@ export class PostgresRepository {
             {
                 database: process.env.DATABASE_NAME,
                 host: process.env.DATABASE_HOST,
-                port: +(process.env.DATABASE_PORT || "123"),
+                port: +(process.env.DATABASE_PORT || "0"),
                 username: process.env.DATABASE_USERNAME,
                 password: process.env.DATABASE_PASSWORD,
                 dialect: "postgres",

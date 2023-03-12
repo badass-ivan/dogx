@@ -12,7 +12,6 @@ import { UserSessionService } from "./user-session.service";
 
 const CHECK_TXN_ACTION = "check-txn-from-user-to-register-action";
 const CHECK_NFTS_ACTION = "check-user-nfts-to-register-action";
-const NO_REFERRAL_CODE_ACTION = "no_refferal-code-action";
 
 export class BotService {
 
@@ -30,7 +29,6 @@ export class BotService {
             this.bindOnStart();
             this.bindOnMessage();
             this.bindOnRecheckNfts();
-            this.bindOnNoReferralCode();
             this.bindOnCheckTxn();
 
             this.bot.launch()
@@ -46,9 +44,14 @@ export class BotService {
 
     private static bindOnStart() {
         this.bot.start(async (ctx) => {
-            if (await this.checkIsUnwatchedMsg(ctx)) {
-                return;
+            try {
+                const referralCode = ctx.update.message.text.split("/start ")[1];
+                const tgUserId = ctx.update.message.from.id;
+                await UserSessionService.saveSession({ tgUserId, fromReferralLink: referralCode })
+            } catch (e: any) {
+                console.error(e.message)
             }
+
             ctx.reply(chatMessagesConfig.sign.start);
         });
     }
@@ -102,7 +105,9 @@ export class BotService {
         try {
             const nfts = await TonService.getNftsFromTargetCollection(address);
 
-            await UserSessionService.saveSession({ tgUserId, address, nfts, otp: moment().unix() })
+            const targetOtp = moment().unix();
+
+            await UserSessionService.saveSession({ tgUserId, address, nfts, otp: targetOtp })
 
             if (!nfts.length) {
                 console.log(`User with tgId: ${tgUserId} and address: ${address} has no NFTs`);
@@ -127,22 +132,19 @@ export class BotService {
 
             console.log(`Send msg to ${tgUserId} with create/check txn actions`);
 
-            await ctx.reply(this.prepareMsgWithNft(nfts), {
+
+            await ctx.reply(this.prepareMsgWithNft(nfts, targetOtp), {
                 reply_markup: {
                     inline_keyboard: [
                         [
                             {
-                                text: chatMessagesConfig.sign.gettingAddress.btns.noReferralCode,
+                                text: chatMessagesConfig.sign.gettingAddress.btns.send,
+                                url: this.createPayTonkeeperUrl(TonService.formatBalanceFromView(chatMessagesConfig.sign.price), targetOtp)
+                            },
+                            {
+                                text: chatMessagesConfig.sign.gettingAddress.btns.checkTxn,
                                 callback_data: CHECK_TXN_ACTION
                             }
-                            // {
-                            //     text: chatMessagesConfig.sign.gettingAddress.btns.send,
-                            //     url: this.createPayTonkeeperUrl(TonService.formatBalanceFromView(chatMessagesConfig.sign.price), otp)
-                            // },
-                            // {
-                            //     text: chatMessagesConfig.sign.gettingAddress.btns.checkTxn,
-                            //     callback_data: CHECK_TXN_ACTION
-                            // }
                         ],
                     ]
                 }
@@ -175,7 +177,7 @@ export class BotService {
             const tgUserId = ctx.update.callback_query.from.id;
             const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
 
-            if (!sessionData) {
+            if (!sessionData || !sessionData.address) {
                 await this.errorHandler(ctx, "Session failed when user select action to recheck nfts!")
                 return;
             }
@@ -184,38 +186,6 @@ export class BotService {
         })
     }
 
-    private static bindOnNoReferralCode() {
-        this.bot.action(NO_REFERRAL_CODE_ACTION, async (ctx) => {
-            if (await this.checkIsUnwatchedMsg(ctx)) {
-                return;
-            }
-
-            const tgUserId = ctx.update.callback_query.from.id;
-            const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
-
-            if (!sessionData) {
-                await this.errorHandler(ctx, "Session failed when user select action to recheck txn!")
-                return;
-            }
-
-            await ctx.reply(this.getSendText(sessionData.otp), {
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            {
-                                text: chatMessagesConfig.sign.gettingAddress.btns.send,
-                                url: this.createPayTonkeeperUrl(TonService.formatBalanceFromView(chatMessagesConfig.sign.price), sessionData.otp)
-                            },
-                            {
-                                text: chatMessagesConfig.sign.gettingAddress.btns.checkTxn,
-                                callback_data: CHECK_TXN_ACTION
-                            }
-                        ],
-                    ]
-                }
-            });
-        })
-    }
     private static bindOnCheckTxn() {
         this.bot.action(CHECK_TXN_ACTION, async (ctx) => {
             if (await this.checkIsUnwatchedMsg(ctx)) {
@@ -226,7 +196,7 @@ export class BotService {
             const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
             console.log(`Finding owner txn from user with tgID: ${tgUserId}, address: ${sessionData?.address} and otp: ${sessionData?.otp}`);
 
-            if (!sessionData) {
+            if (!sessionData || !sessionData.otp || !sessionData.address) {
                 await this.errorHandler(ctx, "Session failed when user select action to recheck txn!")
                 return;
             }
@@ -252,7 +222,7 @@ export class BotService {
 
                 const decodedRawMsg = base64.decode(txn.in_msg.msg_data);
 
-                const cachedOtp = sessionData.otp.toString();
+                const cachedOtp = sessionData.otp!.toString();
 
                 const otp = decodedRawMsg.slice(decodedRawMsg.length - cachedOtp.toString().length)
 
@@ -261,7 +231,7 @@ export class BotService {
 
             if (hasTxn) {
                 try {
-                    await ChatMembersService.saveChatMember({ tgUserId, address: sessionData.address, })
+                    await ChatMembersService.saveChatMember({ tgUserId, address: sessionData.address })
                     await this.sendInviteLink(ctx);
                 } catch (e: any) {
                     await this.errorHandler(ctx, e.message)
@@ -313,7 +283,7 @@ export class BotService {
 
         const nftNames = this.getBeautifulNftsString(nfts);
 
-        ctx.reply(chatMessagesConfig.newMember
+        await ctx.reply(chatMessagesConfig.newMember
             .replace("$USER$", member.username)
             .replace("$NFTS$",nftNames));
     }
@@ -325,13 +295,17 @@ export class BotService {
             .replace("$OTP$", otp.toString());
     }
 
-    private static prepareMsgWithNft(nfts: Nft[]): string {
+    private static prepareMsgWithNft(nfts: Nft[], otp: number): string {
 
         const nftNames = this.getBeautifulNftsString(nfts);
 
         return chatMessagesConfig.sign.gettingAddress.hasNft.text
             .replace("$NFTS$", nftNames)
-            .replace("$REFERRAL_TEXT$", chatMessagesConfig.sign.gettingAddress.hasNft.referralText);
+            .replace("$SEND_TEXT", this.getSendText(otp));
+    }
+
+    private getReferralLink(tgUserId: string) {
+        return `https://t.me/${config.BOT_USERNAME}?start=${tgUserId}`
     }
 
     private static createPayTonkeeperUrl(amount: number, text: number) {

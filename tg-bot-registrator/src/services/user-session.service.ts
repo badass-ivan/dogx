@@ -12,7 +12,8 @@ export class UserSessionService {
             this.userSessionData[it.tgUserId] = {
                 tgUserId: +it.tgUserId,
                 address: it.address,
-                otp: +it.otp
+                otp: +it.otp,
+                fromReferralLink: it.fromReferralLink,
             };
         })
 
@@ -29,7 +30,8 @@ export class UserSessionService {
         return session ? {
             tgUserId: +session.tgUserId,
             address: session.address,
-            otp: +session.otp
+            otp: +session.otp,
+            fromReferralLink: session.fromReferralLink,
         } : undefined;
     }
 
@@ -42,6 +44,7 @@ export class UserSessionService {
             address: useSession.address,
             otp: +useSession.otp,
             nfts: session.nfts,
+            fromReferralLink: session.fromReferralLink,
         }
 
         return this.userSessionData[session.tgUserId] as Session
