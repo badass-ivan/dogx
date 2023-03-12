@@ -97,6 +97,96 @@ export class BotService {
         })
     }
 
+    private static async checkIsRegisteredUserOrAddress(ctx: any) {
+        const tgUserId = ctx.message.from.id;
+        const address = ctx.message.text;
+
+        if (ChatMembersService.getChatMembersByUserId()[tgUserId]) {
+            console.log(`${tgUserId} already in chat`);
+            await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
+            return true;
+        }
+
+        if (ChatMembersService.getChatMembers().some(it => it.address === address)) {
+            console.log(`Address: ${address} requested from user with tgId: ${tgUserId} already in use`);
+            await ctx.reply(chatMessagesConfig.sign.gettingAddress.addressAlreadyInUse);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static async checkNfts(ctx: any, address: string, tgUserId: number) {
+        try {
+            const nfts = await TonService.getNftsFromTargetCollection(address);
+
+            const targetOtp = moment().unix();
+
+            await UserSessionService.saveSession({ tgUserId, address, nfts, otp: targetOtp })
+
+            if (nfts.length < chatMessagesConfig.sign.minCountOfDogs) {
+                console.log(`User with tgId: ${tgUserId} and address: ${address} has no NFTs`);
+
+                let text = "";
+
+                if (!nfts.length) {
+                    text = chatMessagesConfig.sign.gettingAddress.noNft;
+                } else {
+                    text = this.getNftsText(nfts, chatMessagesConfig.sign.gettingAddress.hasNft.notEnoughNft
+                        .replace("$COUNT_OF_NFT$", chatMessagesConfig.sign.minCountOfDogs.toString())
+                        .replace("$NOT_ENOUGH_NFT$", (chatMessagesConfig.sign.minCountOfDogs - nfts.length).toString()))
+                }
+
+                await ctx.reply(text, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                {
+                                    text: chatMessagesConfig.sign.gettingAddress.btns.toCollection,
+                                    url: chatMessagesConfig.collectionUrl,
+                                },
+                                {
+                                    text: chatMessagesConfig.sign.gettingAddress.btns.checkNfts,
+                                    callback_data: CHECK_NFTS_ACTION
+                                }
+                            ],
+                        ]
+                    }
+                })
+                return;
+            }
+
+            console.log(`Send msg to ${tgUserId} with create/check txn actions`);
+
+
+            await ctx.reply(this.getNftsTextWithSend(nfts, targetOtp), {
+                parse_mode:"HTML",
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            {
+                                text: chatMessagesConfig.sign.gettingAddress.btns.send,
+                                url: this.createPayTonkeeperUrl(TonService.formatBalanceFromView(chatMessagesConfig.sign.price), targetOtp)
+                            },
+                            {
+                                text: chatMessagesConfig.sign.gettingAddress.btns.checkTxn,
+                                callback_data: CHECK_TXN_ACTION
+                            }
+                        ],
+                    ]
+                }
+            })
+        } catch (e: any) {
+            if (e.message.includes("illegal base64 data at input byte ")) {
+                console.log(`Msg from ${tgUserId} is not address: ${address}`)
+                await ctx.reply(chatMessagesConfig.sign.gettingAddress.isNotAddress);
+                return;
+            }
+            console.error(e)
+            await this.errorHandler(ctx, e.message)
+        }
+    }
+
     private static bindOnCheckTxn() {
         this.bot.action(CHECK_TXN_ACTION, async (ctx) => {
             const tgUserId = ctx.update.callback_query.from.id;
@@ -164,85 +254,6 @@ export class BotService {
         })
     }
 
-    private static async checkIsRegisteredUserOrAddress(ctx: any) {
-        const tgUserId = ctx.message.from.id;
-        const address = ctx.message.text;
-
-        if (ChatMembersService.getChatMembersByUserId()[tgUserId]) {
-            console.log(`${tgUserId} already in chat`);
-            await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
-            return true;
-        }
-
-        if (ChatMembersService.getChatMembers().some(it => it.address === address)) {
-            console.log(`Address: ${address} requested from user with tgId: ${tgUserId} already in use`);
-            await ctx.reply(chatMessagesConfig.sign.gettingAddress.addressAlreadyInUse);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static async checkNfts(ctx: any, address: string, tgUserId: number) {
-        try {
-            const nfts = await TonService.getNftsFromTargetCollection(address);
-
-            const targetOtp = moment().unix();
-
-            await UserSessionService.saveSession({ tgUserId, address, nfts, otp: targetOtp })
-
-            if (!nfts.length) {
-                console.log(`User with tgId: ${tgUserId} and address: ${address} has no NFTs`);
-                await ctx.reply(chatMessagesConfig.sign.gettingAddress.noNft, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [
-                                {
-                                    text: chatMessagesConfig.sign.gettingAddress.btns.toCollection,
-                                    url: config.COLLECTION_URL,
-                                },
-                                {
-                                    text: chatMessagesConfig.sign.gettingAddress.btns.checkNfts,
-                                    callback_data: CHECK_NFTS_ACTION
-                                }
-                            ],
-                        ]
-                    }
-                })
-                return;
-            }
-
-            console.log(`Send msg to ${tgUserId} with create/check txn actions`);
-
-
-            await ctx.reply(this.prepareMsgWithNft(nfts, targetOtp), {
-                parse_mode:"HTML",
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            {
-                                text: chatMessagesConfig.sign.gettingAddress.btns.send,
-                                url: this.createPayTonkeeperUrl(TonService.formatBalanceFromView(chatMessagesConfig.sign.price), targetOtp)
-                            },
-                            {
-                                text: chatMessagesConfig.sign.gettingAddress.btns.checkTxn,
-                                callback_data: CHECK_TXN_ACTION
-                            }
-                        ],
-                    ]
-                }
-            })
-        } catch (e: any) {
-            if (e.message.includes("illegal base64 data at input byte ")) {
-                console.log(`Msg from ${tgUserId} is not address: ${address}`)
-                await ctx.reply(chatMessagesConfig.sign.gettingAddress.isNotAddress);
-                return;
-            }
-            console.error(e)
-            await this.errorHandler(ctx, e.message)
-        }
-    }
-
     private static async checkIsUnwatchedMsg(ctx: any) {
         const msg = ctx.message;
 
@@ -273,17 +284,20 @@ export class BotService {
         })
     }
 
-    private static prepareMsgWithNft(nfts: Nft[], otp: number): string {
-        const sendText = chatMessagesConfig.sign.gettingAddress.hasNft.sendText
-            .replace("$PRICE", this.getHtmlCodeElem(chatMessagesConfig.sign.price.toString()))
-            .replace("$ADDRESS$", this.getHtmlCodeElem(config.OWNER_ADDRESS))
-            .replace("$OTP$", this.getHtmlCodeElem(otp.toString()));
-
+    private static getNftsText(nfts: Nft[], endText: string) {
         const nftNames = this.getBeautifulNftsString(nfts);
 
         return chatMessagesConfig.sign.gettingAddress.hasNft.text
             .replace("$NFTS$", nftNames)
-            .replace("$SEND_TEXT", sendText);
+            .replace("$END_TEXT", endText);
+    }
+
+    private static getNftsTextWithSend(nfts: Nft[], otp: number): string {
+        const sendText = chatMessagesConfig.sign.gettingAddress.hasNft.sendText
+            .replace("$PRICE$", this.getHtmlCodeElem(chatMessagesConfig.sign.price.toString()))
+            .replace("$ADDRESS$", this.getHtmlCodeElem(config.OWNER_ADDRESS))
+            .replace("$OTP$", this.getHtmlCodeElem(otp.toString()));
+        return this.getNftsText(nfts, sendText)
     }
 
     private static getReferralLinkHtml(tgUserId: number) {
@@ -299,8 +313,8 @@ export class BotService {
     }
 
     static getBeautifulNftsString(nfts: Nft[]) {
-        if (nfts.length > 5) {
-            return `${this.getNftsString(nfts.slice(0, 4))}+${nfts.slice(4).length}NFTs...`;
+        if (nfts.length > chatMessagesConfig.sign.minCountOfDogs) {
+            return `${this.getNftsString(nfts.slice(0, chatMessagesConfig.sign.minCountOfDogs))}+${nfts.slice(chatMessagesConfig.sign.minCountOfDogs).length} NFTs...\n`;
         }
         return this.getNftsString(nfts)
     }
