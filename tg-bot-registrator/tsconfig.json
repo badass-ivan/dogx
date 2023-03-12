@@ -1,21 +1,25 @@
 {
     "compilerOptions": {
-        "module": "CommonJS",
+        "module": "commonjs",
         "target": "es6",
-        "experimentalDecorators": true,
         "emitDecoratorMetadata": true,
         "esModuleInterop": true,
         "noImplicitAny": false,
         "moduleResolution": "node",
         "resolveJsonModule": true,
         "sourceMap": true,
-        "outDir": "dist",
-        "baseUrl": ".",
         "allowJs": true,
+
+        "experimentalDecorators": true,
+        "allowSyntheticDefaultImports": true,
+        "declaration": true,
+        "composite": true,
+        "outDir": "dist",
+        "rootDir": ".",
+        "baseUrl": ".",
+        "strict": true,
         "lib": [
-          "ES2021",
-          "esnext.asynciterable",
-          "es2015.iterable"
+            "es2020"
         ],
         "rootDirs": [
             "./src"

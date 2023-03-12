@@ -15,7 +15,7 @@ export class TonService {
             }).toString(), TON_REQ_HEADER);
 
             return data.nft_items;
-        } catch (e) {
+        } catch (e: any) {
             const errorData = e.response.data;
             throw Error(errorData.error || errorData.message || errorData)
         }
@@ -28,7 +28,7 @@ export class TonService {
             }).toString(), TON_REQ_HEADER);
 
             return data.transactions;
-        } catch (e) {
+        } catch (e: any) {
             const errorData = e.response.data;
             throw Error(errorData.error || errorData.message || errorData)
         }

@@ -32,4 +32,10 @@ export class ChatMembers extends Model {
             defaults: { id: uuid(), address, tgUserId }
         }))[0]
     }
+
+    static async removeChatMemberById(id: string): Promise<void> {
+        await ChatMembers.destroy({
+            where: { id },
+        })
+    }
 }

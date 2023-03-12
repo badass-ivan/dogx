@@ -1,5 +1,3 @@
-import { Telegraf } from "telegraf-ts";
-import config from "../config";
 import { TonService } from "./ton.service";
 import { ChatMembersService } from "./chat-members.service";
 import chatMessagesConfig from "../chat-messages.config";
@@ -8,11 +6,11 @@ import { BotService } from "./bot.service";
 export class ChatWatchdogService {
 
     static start() {
+        console.log("Watchdog inited")
         this.startCheckingChatUsers();
     }
 
     private static async startCheckingChatUsers() {
-        console.log("Check bad chat members")
         await this.checkChatUsers();
 
         setInterval(() => {
@@ -22,16 +20,27 @@ export class ChatWatchdogService {
 
     private static async checkChatUsers() {
         const members = ChatMembersService.getChatMembers();
+        console.log(`Start watchdog finding for ${members.length} members...`)
 
-        await Promise.all(members.map(async it => {
-            const nfts = await TonService.getNftsFromTargetCollection(it.address);
+        for(let i = 0; i < members.length; i++) {
+            const it = members[i];
 
-            if (!nfts.length) {
-                const member = await BotService.getChatMember(+it.tgUserId);
-                console.log(`Remove ${member.user.username} from chat`)
-                await BotService.kickChatMember(+it.tgUserId);
-                await BotService.sendMessage(chatMessagesConfig.watchdog.ban.replace("$USER$", member.user.username));
+            try {
+                const nfts = await TonService.getNftsFromTargetCollection(it.address);
+
+                if (!nfts.length) {
+                    const tgMember = await BotService.getChatMember(+it.tgUserId);
+                    console.log(`Remove ${tgMember.user.username} from chat`)
+                    await BotService.kickChatMember(+it.tgUserId);
+                    await BotService.sendMessage(chatMessagesConfig.watchdog.ban.replace("$USER$", tgMember.user.username || ""));
+                    await ChatMembersService.removeChatMember(it);
+                }
+
+            } catch (e) {
+                console.error(e);
             }
-        }))
+
+            await new Promise(res => setTimeout(res, 200))
+        }
     }
 }

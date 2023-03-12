@@ -1,5 +1,6 @@
 import { Sequelize } from "sequelize-typescript";
 import { ChatMembers } from "./chat-members";
+import { UserSession } from "./user-session";
 
 export class PostgresRepository {
 
@@ -10,7 +11,7 @@ export class PostgresRepository {
             {
                 database: process.env.DATABASE_NAME,
                 host: process.env.DATABASE_HOST,
-                port: +process.env.DATABASE_PORT,
+                port: +(process.env.DATABASE_PORT || "123"),
                 username: process.env.DATABASE_USERNAME,
                 password: process.env.DATABASE_PASSWORD,
                 dialect: "postgres",
@@ -20,7 +21,7 @@ export class PostgresRepository {
                         rejectUnauthorized: false
                     }
                 },
-                models: [ChatMembers],
+                models: [ChatMembers, UserSession],
                 logging: (sql: string) => console.log(sql),
             }
         )

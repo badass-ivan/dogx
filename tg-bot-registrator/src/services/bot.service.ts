@@ -1,4 +1,4 @@
-import { Telegraf } from "telegraf-ts";
+import { ExtraEditMessage, Telegraf } from "telegraf-ts";
 import config from "../config";
 import { TonService } from "./ton.service";
 import { NewChatMember, Nft, Txn } from "../models/types";
@@ -8,7 +8,7 @@ import { Address } from 'ton';
 import { ChatMembersService } from "./chat-members.service";
 import { ChatWatchdogService } from "./chat-watchdog.service";
 import chatMessagesConfig from "../chat-messages.config";
-import { errorHandler } from "../utils/error-handler";
+import { UserSessionService } from "./user-session.service";
 
 const CHECK_TXN_ACTION = "check-txn-from-user-to-register-action";
 const CHECK_NFTS_ACTION = "check-user-nfts-to-register-action";
@@ -18,26 +18,29 @@ export class BotService {
 
     private static bot: Telegraf<any>;
 
-    // private static addressOtp: { [address: string]: number } = {};
-
-    private static userSessionData: { [tgUserId: string]: { address: string, nfts: Nft[], otp: number } | null } = {};
-
     static async start() {
-        console.log("Start bot preparing");
-
         this.bot = new Telegraf(config.BOT_TOKEN);
 
-        // await ChatMembersService.init();
-        // await ChatWatchdogService.start();
+        try {
+            console.log("Start bot preparing");
 
-        this.bindOnStart();
-        this.bindOnMessage();
-        this.bindOnRecheckNfts();
-        this.bindOnNoReferralCode();
-        this.bindOnCheckTxn();
+            await ChatMembersService.init();
+            await UserSessionService.init();
 
-        this.bot.launch()
-        console.log("Bot started!");
+            this.bindOnStart();
+            this.bindOnMessage();
+            this.bindOnRecheckNfts();
+            this.bindOnNoReferralCode();
+            this.bindOnCheckTxn();
+
+            this.bot.launch()
+
+            console.log("Bot started!");
+
+            ChatWatchdogService.start();
+        } catch (e: any) {
+            console.error(e.message)
+        }
     }
 
 
@@ -78,16 +81,16 @@ export class BotService {
 
     private static async checkIsRegisteredUserOrAddress(ctx: any) {
         const tgUserId = ctx.message.from.id;
-        const text = ctx.message.text;
+        const address = ctx.message.text;
 
         if (ChatMembersService.getChatMembersByUserId()[tgUserId]) {
             console.log(`${tgUserId} already in chat`);
-            await ctx.reply(chatMessagesConfig.sign.gettingAddress.alreadyInBand);
+            await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
             return true;
         }
 
-        if (ChatMembersService.getChatMembers().some(it => it.address === text)) {
-            console.log(`Address: ${text} requested from user with tgId: ${tgUserId} already in use`);
+        if (ChatMembersService.getChatMembers().some(it => it.address === address)) {
+            console.log(`Address: ${address} requested from user with tgId: ${tgUserId} already in use`);
             await ctx.reply(chatMessagesConfig.sign.gettingAddress.addressAlreadyInUse);
             return true;
         }
@@ -99,7 +102,7 @@ export class BotService {
         try {
             const nfts = await TonService.getNftsFromTargetCollection(address);
 
-            this.userSessionData[tgUserId] = { address, nfts, otp: moment().unix() };
+            await UserSessionService.saveSession({ tgUserId, address, nfts, otp: moment().unix() })
 
             if (!nfts.length) {
                 console.log(`User with tgId: ${tgUserId} and address: ${address} has no NFTs`);
@@ -122,7 +125,7 @@ export class BotService {
                 return;
             }
 
-            console.log(`Send msg with NFTs to ${tgUserId} and address: ${address}`);
+            console.log(`Send msg to ${tgUserId} with create/check txn actions`);
 
             await ctx.reply(this.prepareMsgWithNft(nfts), {
                 reply_markup: {
@@ -144,14 +147,13 @@ export class BotService {
                     ]
                 }
             })
-        } catch (e) {
+        } catch (e: any) {
+            console.error(e)
             if (e.message.includes("illegal base64 data at input byte ")) {
-                console.log(`User with tgId: ${tgUserId} wrote not an address: ${address}`);
                 await ctx.reply(chatMessagesConfig.sign.gettingAddress.isNotAddress);
                 return;
             }
-            console.error(e)
-            await errorHandler(ctx, e.message)
+            await this.errorHandler(ctx, e.message)
         }
     }
 
@@ -171,10 +173,10 @@ export class BotService {
             }
 
             const tgUserId = ctx.update.callback_query.from.id;
-            const sessionData = this.userSessionData[tgUserId];
+            const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
 
             if (!sessionData) {
-                ctx.reply(chatMessagesConfig.sign.gettingAddress.sessionExpired);
+                await this.errorHandler(ctx, "Session failed when user select action to recheck nfts!")
                 return;
             }
 
@@ -189,7 +191,12 @@ export class BotService {
             }
 
             const tgUserId = ctx.update.callback_query.from.id;
-            const sessionData = this.userSessionData[tgUserId];
+            const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
+
+            if (!sessionData) {
+                await this.errorHandler(ctx, "Session failed when user select action to recheck txn!")
+                return;
+            }
 
             await ctx.reply(this.getSendText(sessionData.otp), {
                 reply_markup: {
@@ -209,7 +216,6 @@ export class BotService {
             });
         })
     }
-
     private static bindOnCheckTxn() {
         this.bot.action(CHECK_TXN_ACTION, async (ctx) => {
             if (await this.checkIsUnwatchedMsg(ctx)) {
@@ -217,80 +223,90 @@ export class BotService {
             }
 
             const tgUserId = ctx.update.callback_query.from.id;
-            const sessionData = this.userSessionData[tgUserId];
+            const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
             console.log(`Finding owner txn from user with tgID: ${tgUserId}, address: ${sessionData?.address} and otp: ${sessionData?.otp}`);
 
             if (!sessionData) {
-                console.log("Expired session")
+                await this.errorHandler(ctx, "Session failed when user select action to recheck txn!")
                 return;
             }
 
             // already registered
             if (ChatMembersService.getChatMembersByUserId()[tgUserId]) {
+                await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
                 return;
             }
 
             let txns: Txn[] = [];
-
             try {
-               txns = await TonService.getTxns(config.OWNER_ADDRESS);
-            } catch (e) {
-                await errorHandler(ctx, e.message)
+                txns = await TonService.getTxns(config.OWNER_ADDRESS);
+            } catch (e: any) {
+                await this.errorHandler(ctx, e.message)
                 return;
             }
 
             const hasTxn = txns.find(txn => {
-                if (!txn.in_msg.source) return false;
+                if (!txn.in_msg.source || !txn.in_msg.msg_data) return false;
 
-                const decodedRawMsg = base64.decode(txn.in_msg.msg_data);
-                const otp = decodedRawMsg.slice(decodedRawMsg.length - sessionData.otp.toString().length)
                 const address = Address.parseRaw(txn.in_msg.source.address);
 
-                return sessionData.otp == otp && address.toString() == sessionData.address;
+                const decodedRawMsg = base64.decode(txn.in_msg.msg_data);
+
+                const cachedOtp = sessionData.otp.toString();
+
+                const otp = decodedRawMsg.slice(decodedRawMsg.length - cachedOtp.toString().length)
+
+                return address.toString() == sessionData.address && cachedOtp == otp;
             });
 
             if (hasTxn) {
                 try {
-                    console.log(`Start saving user ${tgUserId} with address ${sessionData.address}`);
                     await ChatMembersService.saveChatMember({ tgUserId, address: sessionData.address, })
-                    console.log(`Done saving user ${tgUserId} with address ${sessionData.address}`);
-                } catch (e) {
-                    await errorHandler(ctx, e.message)
-                    return;
+                    await this.sendInviteLink(ctx);
+                } catch (e: any) {
+                    await this.errorHandler(ctx, e.message)
                 }
-
-                await ctx.reply(chatMessagesConfig.sign.checkTxn.payed, {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [
-                                {
-                                    text: chatMessagesConfig.chatName,
-                                    url: await this.bot.telegram.exportChatInviteLink(config.CHAT_ID)
-                                }
-                            ],
-                        ]
-                    }
-                })
                 return;
             }
 
             console.log(`Cant find txn from user with tgId: ${tgUserId} and address: ${sessionData.address}`);
+
             await ctx.reply(chatMessagesConfig.sign.checkTxn.noTxn)
         });
     }
 
+    private static async sendInviteLink(ctx: any, text?: string): Promise<void>{
+        await ctx.reply(text || chatMessagesConfig.sign.checkTxn.payed, {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        {
+                            text: chatMessagesConfig.chatName,
+                            url: await this.bot.telegram.exportChatInviteLink(config.CHAT_ID)
+                        }
+                    ],
+                ]
+            }
+        })
+    }
+
     private static async onNewChatMember(ctx: any, member: NewChatMember) {
-        const sessionData = this.userSessionData[member.id];
+        const sessionData = await UserSessionService.getSessionByUserId(member.id);
 
-        let address = sessionData.address;
-
-        console.log(`New chat member with tgId: ${member.id} and address: ${address}`);
+        let address = sessionData?.address;
 
         if (!sessionData) {
             const chatUser = ChatMembersService.getChatMembersByUserId()[member.id];
             if (!chatUser) return;
 
             address = chatUser.address;
+        }
+
+        console.log(`New chat member with tgId: ${member.id} and address: ${address}`);
+
+        if (!address) {
+            console.error(`Cant get address FOR NEW MEMBER with tgId: ${member.id}`);
+            return;
         }
 
         const nfts = sessionData?.nfts || await TonService.getNftsFromTargetCollection(address);
@@ -345,9 +361,33 @@ export class BotService {
         await this.bot.telegram.sendMessage(config.CHAT_ID, message);
     }
 
-    private static async showUpdates() {
-        const updates = await this.bot.telegram.getUpdates();
-        console.log(updates)
-        console.log(JSON.stringify(updates))
+    private static async startShowingUpdates() {
+        try {
+            console.log("Getting bot updates...")
+            const updates = await this.bot.telegram.getUpdates();
+            console.log(`Found ${updates.length} updates`)
+            console.log(`Updates: ${JSON.stringify(updates)}`)
+        } catch (e: any) {
+            console.error(e.message);
+        }
+    }
+
+    static async errorHandler(ctx: any, error: string) {
+        console.error(error);
+        await ctx.reply(chatMessagesConfig.systemError.replace("$ERROR$", error))
+    }
+
+    static async sendErrorToAdmin(error: string) {
+        await this.sendMsgToAdmin(`#error\n⚠️\n${error}\n⚠️`, {
+            disable_notification: false,
+        });
+    }
+
+    static async sendMsgToAdmin(msg: string, extra?: ExtraEditMessage ) {
+        if (!this.bot) return;
+
+        await this.bot.telegram.sendMessage(config.ADMIN_CHAT_ID, msg, extra || {
+            disable_notification: true,
+        });
     }
 }

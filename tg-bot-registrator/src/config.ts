@@ -12,12 +12,13 @@ const config = {
     BOT_TOKEN,
     TG_API,
     TG_BOT_API: `${TG_API}/bot${BOT_TOKEN}`,
-    CHAT_ID: +process.env.CHAT_ID,
-    COLLECTION_ADDRESS: process.env.COLLECTION_ADDRESS,
-    OWNER_ADDRESS: process.env.OWNER_ADDRESS,
+    CHAT_ID: +(process.env.CHAT_ID || "0"),
+    COLLECTION_ADDRESS: process.env.COLLECTION_ADDRESS || "",
+    OWNER_ADDRESS: process.env.OWNER_ADDRESS || "",
+    ADMIN_CHAT_ID: process.env.ADMIN_CHAT_ID || "",
     TON_API_URL: "https://tonapi.io/v1",
-    TON_API_SERVER_KEY: `Bearer ${process.env.TON_API_SERVER_KEY}`,
-    COLLECTION_URL: "https://getgems.io/collection/EQB_24cS5G4ssIQ6DmbjeL76WuXZ164zLBFuojAlDi6x9MYp",
+    TON_API_SERVER_KEY: `Bearer ${process.env.TON_API_SERVER_KEY || ""}`,
+    COLLECTION_URL: "https://getgems.io/collection/EQBNoiznqLZkOOpZnMe09cb3qHHs_CPEaARXj4CHqgkm3h2n?filter=%7B%22attributes%22%3A%7B%7D%7D",
 }
 
 export const TON_REQ_HEADER = {
