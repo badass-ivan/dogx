@@ -12,6 +12,7 @@ import { UserSessionService } from "./user-session.service";
 
 const CHECK_TXN_ACTION = "check-txn-from-user-to-register-action";
 const CHECK_NFTS_ACTION = "check-user-nfts-to-register-action";
+const GET_REFERRAL_LINK_ACTION = "get-referral-link-action";
 
 export class BotService {
 
@@ -30,6 +31,7 @@ export class BotService {
             this.bindOnMessage();
             this.bindOnRecheckNfts();
             this.bindOnCheckTxn();
+            this.bindOnReferralLink();
 
             this.bot.launch()
 
@@ -41,13 +43,12 @@ export class BotService {
         }
     }
 
-
     private static bindOnStart() {
         this.bot.start(async (ctx) => {
             try {
-                const referralCode = ctx.update.message.text.split("/start ")[1];
+                const fromReferralCode = ctx.update.message.text.split("/start ")[1];
                 const tgUserId = ctx.update.message.from.id;
-                await UserSessionService.saveSession({ tgUserId, fromReferralLink: referralCode })
+                await UserSessionService.saveSession({ tgUserId, fromReferralCode })
             } catch (e: any) {
                 console.error(e.message)
             }
@@ -80,6 +81,87 @@ export class BotService {
 
             await this.checkNfts(ctx, text, tgUserId);
         });
+    }
+
+    private static bindOnRecheckNfts() {
+        this.bot.action(CHECK_NFTS_ACTION, async (ctx) => {
+            const tgUserId = ctx.update.callback_query.from.id;
+            const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
+
+            if (!sessionData || !sessionData.address) {
+                await this.errorHandler(ctx, "Session failed when user select action to recheck nfts!")
+                return;
+            }
+
+            await this.checkNfts(ctx, sessionData.address, tgUserId);
+        })
+    }
+
+    private static bindOnCheckTxn() {
+        this.bot.action(CHECK_TXN_ACTION, async (ctx) => {
+            const tgUserId = ctx.update.callback_query.from.id;
+            const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
+            console.log(`Finding owner txn from user with tgID: ${tgUserId}, address: ${sessionData?.address} and otp: ${sessionData?.otp}`);
+
+            if (!sessionData || !sessionData.otp || !sessionData.address) {
+                await this.errorHandler(ctx, "Session failed when user select action to recheck txn!")
+                return;
+            }
+
+            // already registered
+            if (ChatMembersService.getChatMembersByUserId()[tgUserId]) {
+                await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
+                return;
+            }
+
+            let txns: Txn[] = [];
+            try {
+                txns = await TonService.getTxns(config.OWNER_ADDRESS);
+            } catch (e: any) {
+                await this.errorHandler(ctx, e.message)
+                return;
+            }
+
+            const hasTxn = txns.find(txn => {
+                if (!txn.in_msg.source || !txn.in_msg.msg_data) return false;
+
+                const address = Address.parseRaw(txn.in_msg.source.address);
+
+                const decodedRawMsg = base64.decode(txn.in_msg.msg_data);
+
+                const cachedOtp = sessionData.otp!.toString();
+
+                const otp = decodedRawMsg.slice(decodedRawMsg.length - cachedOtp.toString().length)
+
+                return address.toString() == sessionData.address && cachedOtp == otp;
+            });
+
+            if (hasTxn) {
+                try {
+                    await ChatMembersService.saveChatMember({ tgUserId, address: sessionData.address })
+                    await this.sendInviteLink(ctx);
+                } catch (e: any) {
+                    await this.errorHandler(ctx, e.message)
+                }
+                return;
+            }
+
+            console.log(`Cant find txn from user with tgId: ${tgUserId} and address: ${sessionData.address}`);
+
+            await ctx.reply(chatMessagesConfig.sign.checkTxn.noTxn)
+        });
+    }
+
+    private static bindOnReferralLink() {
+        this.bot.action(GET_REFERRAL_LINK_ACTION, async (ctx) => {
+            const tgUserId = ctx.update.callback_query.from.id;
+
+            const text = chatMessagesConfig.referralCodeText
+                .replace("$REFERRAL_LINK$", this.getHtmlCodeElem(this.getReferralLinkHtml(tgUserId)))
+                .replace("$REFERRAL_PRIZE$", this.getHtmlCodeElem(chatMessagesConfig.referralPrize.toString()));
+
+            ctx.reply(text, { parse_mode:"HTML" })
+        })
     }
 
     private static async checkIsRegisteredUserOrAddress(ctx: any) {
@@ -134,6 +216,7 @@ export class BotService {
 
 
             await ctx.reply(this.prepareMsgWithNft(nfts, targetOtp), {
+                parse_mode:"HTML",
                 reply_markup: {
                     inline_keyboard: [
                         [
@@ -150,11 +233,12 @@ export class BotService {
                 }
             })
         } catch (e: any) {
-            console.error(e)
             if (e.message.includes("illegal base64 data at input byte ")) {
+                console.log(`Msg from ${tgUserId} is not address: ${address}`)
                 await ctx.reply(chatMessagesConfig.sign.gettingAddress.isNotAddress);
                 return;
             }
+            console.error(e)
             await this.errorHandler(ctx, e.message)
         }
     }
@@ -168,83 +252,6 @@ export class BotService {
         return fromUser.is_bot;
     }
 
-    private static bindOnRecheckNfts() {
-        this.bot.action(CHECK_NFTS_ACTION, async (ctx) => {
-            if (await this.checkIsUnwatchedMsg(ctx)) {
-                return;
-            }
-
-            const tgUserId = ctx.update.callback_query.from.id;
-            const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
-
-            if (!sessionData || !sessionData.address) {
-                await this.errorHandler(ctx, "Session failed when user select action to recheck nfts!")
-                return;
-            }
-
-            await this.checkNfts(ctx, sessionData.address, tgUserId);
-        })
-    }
-
-    private static bindOnCheckTxn() {
-        this.bot.action(CHECK_TXN_ACTION, async (ctx) => {
-            if (await this.checkIsUnwatchedMsg(ctx)) {
-                return;
-            }
-
-            const tgUserId = ctx.update.callback_query.from.id;
-            const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
-            console.log(`Finding owner txn from user with tgID: ${tgUserId}, address: ${sessionData?.address} and otp: ${sessionData?.otp}`);
-
-            if (!sessionData || !sessionData.otp || !sessionData.address) {
-                await this.errorHandler(ctx, "Session failed when user select action to recheck txn!")
-                return;
-            }
-
-            // already registered
-            if (ChatMembersService.getChatMembersByUserId()[tgUserId]) {
-                await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
-                return;
-            }
-
-            let txns: Txn[] = [];
-            try {
-                txns = await TonService.getTxns(config.OWNER_ADDRESS);
-            } catch (e: any) {
-                await this.errorHandler(ctx, e.message)
-                return;
-            }
-
-            const hasTxn = txns.find(txn => {
-                if (!txn.in_msg.source || !txn.in_msg.msg_data) return false;
-
-                const address = Address.parseRaw(txn.in_msg.source.address);
-
-                const decodedRawMsg = base64.decode(txn.in_msg.msg_data);
-
-                const cachedOtp = sessionData.otp!.toString();
-
-                const otp = decodedRawMsg.slice(decodedRawMsg.length - cachedOtp.toString().length)
-
-                return address.toString() == sessionData.address && cachedOtp == otp;
-            });
-
-            if (hasTxn) {
-                try {
-                    await ChatMembersService.saveChatMember({ tgUserId, address: sessionData.address })
-                    await this.sendInviteLink(ctx);
-                } catch (e: any) {
-                    await this.errorHandler(ctx, e.message)
-                }
-                return;
-            }
-
-            console.log(`Cant find txn from user with tgId: ${tgUserId} and address: ${sessionData.address}`);
-
-            await ctx.reply(chatMessagesConfig.sign.checkTxn.noTxn)
-        });
-    }
-
     private static async sendInviteLink(ctx: any, text?: string): Promise<void>{
         await ctx.reply(text || chatMessagesConfig.sign.checkTxn.payed, {
             reply_markup: {
@@ -255,57 +262,36 @@ export class BotService {
                             url: await this.bot.telegram.exportChatInviteLink(config.CHAT_ID)
                         }
                     ],
+                    [
+                        {
+                            text: chatMessagesConfig.btns.getReferralCode,
+                            callback_data: GET_REFERRAL_LINK_ACTION
+                        }
+                    ],
                 ]
             }
         })
     }
 
-    private static async onNewChatMember(ctx: any, member: NewChatMember) {
-        const sessionData = await UserSessionService.getSessionByUserId(member.id);
-
-        let address = sessionData?.address;
-
-        if (!sessionData) {
-            const chatUser = ChatMembersService.getChatMembersByUserId()[member.id];
-            if (!chatUser) return;
-
-            address = chatUser.address;
-        }
-
-        console.log(`New chat member with tgId: ${member.id} and address: ${address}`);
-
-        if (!address) {
-            console.error(`Cant get address FOR NEW MEMBER with tgId: ${member.id}`);
-            return;
-        }
-
-        const nfts = sessionData?.nfts || await TonService.getNftsFromTargetCollection(address);
-
-        const nftNames = this.getBeautifulNftsString(nfts);
-
-        await ctx.reply(chatMessagesConfig.newMember
-            .replace("$USER$", member.username)
-            .replace("$NFTS$",nftNames));
-    }
-
-    private static getSendText(otp: number) {
-        return chatMessagesConfig.sign.gettingAddress.hasNft.sendText
-            .replace("$PRICE", chatMessagesConfig.sign.price.toString())
-            .replace("$ADDRESS$", config.OWNER_ADDRESS)
-            .replace("$OTP$", otp.toString());
-    }
-
     private static prepareMsgWithNft(nfts: Nft[], otp: number): string {
+        const sendText = chatMessagesConfig.sign.gettingAddress.hasNft.sendText
+            .replace("$PRICE", this.getHtmlCodeElem(chatMessagesConfig.sign.price.toString()))
+            .replace("$ADDRESS$", this.getHtmlCodeElem(config.OWNER_ADDRESS))
+            .replace("$OTP$", this.getHtmlCodeElem(otp.toString()));
 
         const nftNames = this.getBeautifulNftsString(nfts);
 
         return chatMessagesConfig.sign.gettingAddress.hasNft.text
             .replace("$NFTS$", nftNames)
-            .replace("$SEND_TEXT", this.getSendText(otp));
+            .replace("$SEND_TEXT", sendText);
     }
 
-    private getReferralLink(tgUserId: string) {
-        return `https://t.me/${config.BOT_USERNAME}?start=${tgUserId}`
+    private static getReferralLinkHtml(tgUserId: number) {
+        return this.getHtmlCodeElem(`https://t.me/${config.BOT_USERNAME}?start=${tgUserId}`);
+    }
+
+    private static getHtmlCodeElem(text: string) {
+        return `<code>${text}</code>`;
     }
 
     private static createPayTonkeeperUrl(amount: number, text: number) {
@@ -335,17 +321,6 @@ export class BotService {
         await this.bot.telegram.sendMessage(config.CHAT_ID, message);
     }
 
-    private static async startShowingUpdates() {
-        try {
-            console.log("Getting bot updates...")
-            const updates = await this.bot.telegram.getUpdates();
-            console.log(`Found ${updates.length} updates`)
-            console.log(`Updates: ${JSON.stringify(updates)}`)
-        } catch (e: any) {
-            console.error(e.message);
-        }
-    }
-
     static async errorHandler(ctx: any, error: string) {
         console.error(error);
         await ctx.reply(chatMessagesConfig.systemError.replace("$ERROR$", error))
@@ -363,5 +338,44 @@ export class BotService {
         await this.bot.telegram.sendMessage(config.ADMIN_CHAT_ID, msg, extra || {
             disable_notification: true,
         });
+    }
+
+    private static async startShowingUpdates() {
+        try {
+            console.log("Getting bot updates...")
+            const updates = await this.bot.telegram.getUpdates();
+            console.log(`Found ${updates.length} updates`)
+            console.log(`Updates: ${JSON.stringify(updates)}`)
+        } catch (e: any) {
+            console.error(e.message);
+        }
+    }
+
+    private static async onNewChatMember(ctx: any, member: NewChatMember) {
+        const sessionData = await UserSessionService.getSessionByUserId(member.id);
+
+        let address = sessionData?.address;
+
+        if (!sessionData) {
+            const chatUser = ChatMembersService.getChatMembersByUserId()[member.id];
+            if (!chatUser) return;
+
+            address = chatUser.address;
+        }
+
+        console.log(`New chat member with tgId: ${member.id} and address: ${address}`);
+
+        if (!address) {
+            console.error(`Cant get address FOR NEW MEMBER with tgId: ${member.id}`);
+            return;
+        }
+
+        const nfts = sessionData?.nfts || await TonService.getNftsFromTargetCollection(address);
+
+        const nftNames = this.getBeautifulNftsString(nfts);
+
+        await ctx.reply(chatMessagesConfig.newMember
+            .replace("$USER$", member.username)
+            .replace("$NFTS$",nftNames));
     }
 }

@@ -24,8 +24,8 @@ export class UserSession extends Model {
     @Column({ field: "otp", allowNull: true })
     otp: string;
 
-    @Column({ field: "from_referral_link", allowNull: true })
-    fromReferralLink: string;
+    @Column({ field: "from_referral_code", allowNull: true })
+    fromReferralCode: string;
 
     static async getSessions(): Promise<UserSession[]> {
         return this.findAll();
@@ -46,7 +46,7 @@ export class UserSession extends Model {
 
         if (userSession) {
             console.log(`Update session for tgUserId: ${session.tgUserId}`)
-            await UserSession.update({ otp, address: session.address, fromReferralLink: session.fromReferralLink }, {
+            await UserSession.update({ otp, address: session.address, fromReferralCode: session.fromReferralCode }, {
                 where: {
                     tgUserId: {
                         [Op.eq]: tgUserId
@@ -64,7 +64,7 @@ export class UserSession extends Model {
             tgUserId,
             address: session.address,
             otp: session.otp?.toString(),
-            fromReferralLink: session.fromReferralLink,
+            fromReferralCode: session.fromReferralCode,
         })
     }
 

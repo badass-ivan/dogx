@@ -57,5 +57,5 @@ export type Session = {
     address?: string,
     nfts?: Nft[],
     otp?: number,
-    fromReferralLink?: string
+    fromReferralCode?: string
 };
