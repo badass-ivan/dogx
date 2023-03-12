@@ -8,8 +8,8 @@ export class TonService {
     private static transferService: TonTransferService;
 
     static async init() {
-        this.transferService = await TonTransferService.create(config.TON_JSON_RPC_API);
-        console.log(`Transfer service inited with balance ${await this.transferService.getTonBalance()}`)
+        this.transferService = await TonTransferService.create(config.TON_JSON_RPC_API, config.TON_API_JSON_RPC_KEY);
+        console.log(`Transfer service inited with balance: ${await this.transferService.getTonBalance()} TON`);
     }
 
     static async getNftsFromTargetCollection(address: string) {

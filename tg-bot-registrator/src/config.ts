@@ -20,6 +20,7 @@ const config = {
     TON_API_URL: "https://tonapi.io/v1",
     TON_JSON_RPC_API: "https://toncenter.com/api/v2/jsonRPC",
     TON_API_SERVER_KEY: `Bearer ${process.env.TON_API_SERVER_KEY || ""}`,
+    TON_API_JSON_RPC_KEY: process.env.TON_API_JSON_RPC_KEY || "",
 }
 
 export const TON_REQ_HEADER = {

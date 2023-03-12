@@ -13,9 +13,9 @@ export class TonTransferService {
         private contract: OpenedContract<WalletContractV4>,
     ) {}
 
-    static async create(endpoint: string) {
+    static async create(endpoint: string, apiKey: string) {
         const mnemonic = process.env.MNEMONIC || "";
-        const client = new TonClient({ endpoint });
+        const client = new TonClient({ endpoint, apiKey });
         const keyPair = await  mnemonicToPrivateKey(mnemonic.split(" "))
         const wallet = WalletContractV4.create({ workchain: this.workchain, publicKey: keyPair.publicKey });
         const contract = client.open(wallet);
@@ -28,17 +28,29 @@ export class TonTransferService {
     }
 
     async createTransfer(to: string, amount: number, msg?: string): Promise<void> {
-        const seqno: number = await this.contract.getSeqno();
+        try {
+            const balance = await this.getTonBalance();
+            console.error(`Send ${amount} TON to ${to}`)
 
-        await this.contract.createTransfer({
-            seqno,
-            secretKey: this.keyPair.secretKey,
-            messages: [internal({
-                value: amount.toString(),
-                to,
-                body: msg,
-            })]
-        });
+            if (balance < amount + 1) {
+                console.error(`Cant send ${amount} TON to ${to}! Balance: ${balance}`)
+                return;
+            }
+
+            const seqno: number = await this.contract.getSeqno();
+
+            await this.contract.createTransfer({
+                seqno,
+                secretKey: this.keyPair.secretKey,
+                messages: [internal({
+                    value: amount.toString(),
+                    to,
+                    body: msg,
+                })]
+            });
+        } catch (e) {
+            console.error(e)
+        }
     }
 
     static formatBalanceFromView(num: number) {
