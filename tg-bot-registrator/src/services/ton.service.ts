@@ -1,8 +1,16 @@
 import axios from "axios";
 import config, { TON_REQ_HEADER } from "../config";
 import { Txn } from "../models/types";
+import { TonTransferService } from "../../../ton-transfer"
 
 export class TonService {
+
+    private static transferService: TonTransferService;
+
+    static async init() {
+        this.transferService = await TonTransferService.create(config.TON_JSON_RPC_API);
+        console.log(`Transfer service inited with balance ${await this.transferService.getTonBalance()}`)
+    }
 
     static async getNftsFromTargetCollection(address: string) {
         try {
@@ -32,9 +40,5 @@ export class TonService {
             const errorData = e.response.data;
             throw Error(errorData.error || errorData.message || errorData)
         }
-    }
-
-    static formatBalanceFromView(num: number) {
-        return num * 10 ** 9
     }
 }

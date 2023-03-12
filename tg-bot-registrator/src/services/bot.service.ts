@@ -9,6 +9,7 @@ import { ChatMembersService } from "./chat-members.service";
 import { ChatWatchdogService } from "./chat-watchdog.service";
 import chatMessagesConfig from "../chat-messages.config";
 import { UserSessionService } from "./user-session.service";
+import { TonTransferService } from "../../../ton-transfer"
 
 const CHECK_TXN_ACTION = "check-txn-from-user-to-register-action";
 const CHECK_NFTS_ACTION = "check-user-nfts-to-register-action";
@@ -26,6 +27,7 @@ export class BotService {
 
             await ChatMembersService.init();
             await UserSessionService.init();
+            await TonService.init();
 
             this.bindOnStart();
             this.bindOnMessage();
@@ -38,6 +40,7 @@ export class BotService {
             console.log("Bot started!");
 
             ChatWatchdogService.start();
+
         } catch (e: any) {
             console.error(e.message)
         }
@@ -166,7 +169,7 @@ export class BotService {
                         [
                             {
                                 text: chatMessagesConfig.sign.gettingAddress.btns.send,
-                                url: this.createPayTonkeeperUrl(TonService.formatBalanceFromView(chatMessagesConfig.sign.price), targetOtp)
+                                url: this.createPayTonkeeperUrl(TonTransferService.formatBalanceFromView(chatMessagesConfig.sign.price), targetOtp)
                             },
                             {
                                 text: chatMessagesConfig.sign.gettingAddress.btns.checkTxn,

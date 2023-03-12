@@ -21,7 +21,8 @@
             "esnext.asynciterable"
         ],
         "rootDirs": [
-            "./src"
+            "./src",
+            "../ton-trasfer/src"
         ]
     },
     "include": [

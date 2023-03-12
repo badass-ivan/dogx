@@ -2,9 +2,9 @@
   "name": "twa-security",
   "version": "1.0.0",
   "description": "",
-  "main": "dist/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "del-cli --force dist && tsc && node dist/src/index.js",
+    "start": "del-cli --force dist && tsc && node dist/tg-bot-registrator/src/index.js",
     "build": "tsc --build",
     "clean": "tsc --build --clean"
   },
