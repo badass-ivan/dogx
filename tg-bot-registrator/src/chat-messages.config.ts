@@ -6,9 +6,11 @@ export default {
 
     collectionUrl: "https://getgems.io/collection/EQB_24cS5G4ssIQ6DmbjeL76WuXZ164zLBFuojAlDi6x9MYp",
 
-    referralCodeText: "Держи свою реферальную ссылку!\n$REFERRAL_LINK$\nЕсли твой другу(или подруга) перейдёт по этой ссылке и войдёт в чат холдеров, то ты получишь $REFERRAL_PRIZE$ TON!",
+    inviterText: "Держи свою реферальную ссылку!\n$REFERRAL_LINK$\nЕсли твой другу(или подруга) перейдёт по этой ссылке и войдёт в чат холдеров, то ты получишь $REFERRAL_PRIZE$ TON!",
 
-    referralPrize: 0.02,
+    prizeForReferral: 0.02,
+
+    prizeForReferralDescription: "Благодарим за то, что привёл к нам $USER$!",
 
     btns: {
         getReferralCode: "Получить реферальную ссылку",

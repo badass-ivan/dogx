@@ -9,13 +9,12 @@
         "resolveJsonModule": true,
         "sourceMap": true,
         "allowJs": true,
-
         "experimentalDecorators": true,
         "allowSyntheticDefaultImports": true,
         "declaration": true,
         "outDir": "dist",
         "baseUrl": ".",
-        //"strict": true,
+        "strict": true,
         "lib": [
             "es2020",
             "esnext.asynciterable"

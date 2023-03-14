@@ -49,9 +49,9 @@ export class BotService {
     private static bindOnStart() {
         this.bot.start(async (ctx) => {
             try {
-                const fromReferralCode = ctx.update.message.text.split("/start ")[1];
+                const inviterTgUserId = ctx.update.message.text.split("/start ")[1];
                 const tgUserId = ctx.update.message.from.id;
-                await UserSessionService.saveSession({ tgUserId, fromReferralCode })
+                await UserSessionService.saveSession({ tgUserId, inviterTgUserId })
             } catch (e: any) {
                 console.error(e.message)
             }
@@ -104,7 +104,7 @@ export class BotService {
         const tgUserId = ctx.message.from.id;
         const address = ctx.message.text;
 
-        if (ChatMembersService.getChatMembersByUserId()[tgUserId]) {
+        if (ChatMembersService.getChatMembersByUserId(tgUserId)) {
             console.log(`${tgUserId} already in chat`);
             await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
             return true;
@@ -161,6 +161,11 @@ export class BotService {
 
             console.log(`Send msg to ${tgUserId} with create/check txn actions`);
 
+            const payLink = this.createPayTonkeeperUrl(
+                config.OWNER_ADDRESS,
+                TonTransferService.formatBalanceFromView(chatMessagesConfig.sign.price),
+                targetOtp.toString()
+            );
 
             await ctx.reply(this.getNftsTextWithSend(nfts, targetOtp), {
                 parse_mode:"HTML",
@@ -169,7 +174,7 @@ export class BotService {
                         [
                             {
                                 text: chatMessagesConfig.sign.gettingAddress.btns.send,
-                                url: this.createPayTonkeeperUrl(TonTransferService.formatBalanceFromView(chatMessagesConfig.sign.price), targetOtp)
+                                url: payLink
                             },
                             {
                                 text: chatMessagesConfig.sign.gettingAddress.btns.checkTxn,
@@ -193,17 +198,18 @@ export class BotService {
     private static bindOnCheckTxn() {
         this.bot.action(CHECK_TXN_ACTION, async (ctx) => {
             const tgUserId = ctx.update.callback_query.from.id;
+
+            // already registered
+            if (ChatMembersService.getChatMembersByUserId(tgUserId)) {
+                await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
+                return;
+            }
+
             const sessionData = await UserSessionService.getSessionByUserId(tgUserId);
             console.log(`Finding owner txn from user with tgID: ${tgUserId}, address: ${sessionData?.address} and otp: ${sessionData?.otp}`);
 
             if (!sessionData || !sessionData.otp || !sessionData.address) {
                 await this.errorHandler(ctx, "Session failed when user select action to recheck txn!")
-                return;
-            }
-
-            // already registered
-            if (ChatMembersService.getChatMembersByUserId()[tgUserId]) {
-                await this.sendInviteLink(ctx, chatMessagesConfig.sign.gettingAddress.alreadyInBand);
                 return;
             }
 
@@ -233,6 +239,9 @@ export class BotService {
                 try {
                     await ChatMembersService.saveChatMember({ tgUserId, address: sessionData.address })
                     await this.sendInviteLink(ctx);
+                    if (sessionData.inviterTgUserId) {
+                        await TonService.sendPrizeToInviter(+sessionData.inviterTgUserId)
+                    }
                 } catch (e: any) {
                     await this.errorHandler(ctx, e.message)
                 }
@@ -249,9 +258,9 @@ export class BotService {
         this.bot.action(GET_REFERRAL_LINK_ACTION, async (ctx) => {
             const tgUserId = ctx.update.callback_query.from.id;
 
-            const text = chatMessagesConfig.referralCodeText
+            const text = chatMessagesConfig.inviterText
                 .replace("$REFERRAL_LINK$", this.getHtmlCodeElem(this.getReferralLinkHtml(tgUserId)))
-                .replace("$REFERRAL_PRIZE$", this.getHtmlCodeElem(chatMessagesConfig.referralPrize.toString()));
+                .replace("$REFERRAL_PRIZE$", this.getHtmlCodeElem(chatMessagesConfig.prizeForReferral.toString()));
 
             ctx.reply(text, { parse_mode:"HTML" })
         })
@@ -311,8 +320,8 @@ export class BotService {
         return `<code>${text}</code>`;
     }
 
-    private static createPayTonkeeperUrl(amount: number, text: number) {
-        return `https://app.tonkeeper.com/transfer/${config.OWNER_ADDRESS}?amount=${amount}&text=${text}`;
+    private static createPayTonkeeperUrl(to: string, amount: number, text: string) {
+        return `https://app.tonkeeper.com/transfer/${to}?amount=${amount}&text=${text}`;
     }
 
     static getBeautifulNftsString(nfts: Nft[]) {
@@ -374,10 +383,10 @@ export class BotService {
         let address = sessionData?.address;
 
         if (!sessionData) {
-            const chatUser = ChatMembersService.getChatMembersByUserId()[member.id];
-            if (!chatUser) return;
+            const chatMember = ChatMembersService.getChatMembersByUserId(member.id);
+            if (!chatMember) return;
 
-            address = chatUser.address;
+            address = chatMember.address;
         }
 
         console.log(`New chat member with tgId: ${member.id} and address: ${address}`);
@@ -394,5 +403,25 @@ export class BotService {
         await ctx.reply(chatMessagesConfig.newMember
             .replace("$USER$", member.username)
             .replace("$NFTS$",nftNames));
+    }
+
+    static async sendTransferLinkToOwner(to: string, amount: number, body?: string) {
+        const payLink = this.createPayTonkeeperUrl(
+            to,
+            TonTransferService.formatBalanceFromView(amount),
+            body || ""
+        );
+        await this.bot.telegram.sendMessage(config.OWNER_CHAT_ID, body || "", {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        {
+                            text: chatMessagesConfig.sign.gettingAddress.btns.send,
+                            url: payLink
+                        },
+                    ],
+                ]
+            }
+        })
     }
 }

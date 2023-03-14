@@ -27,29 +27,31 @@ export class TonTransferService {
         return TonTransferService.formatBalanceToView(Number(await this.contract.getBalance()));
     }
 
-    async createTransfer(to: string, amount: number, msg?: string): Promise<void> {
+    async createTransfer(to: string, amount: number, body?: string): Promise<void> {
         try {
             const balance = await this.getTonBalance();
+            console.log("BALANCE", balance)
             console.error(`Send ${amount} TON to ${to}`)
 
             if (balance < amount + 1) {
-                console.error(`Cant send ${amount} TON to ${to}! Balance: ${balance}`)
-                return;
+                console.error(`Cant send ${amount} TON to ${to}! Balance: ${balance}`);
+                throw Error(`Amount ${amount} exceed the balance ${balance} + Fee`)
             }
 
             const seqno: number = await this.contract.getSeqno();
 
-            await this.contract.createTransfer({
+            await this.contract.sendTransfer({
                 seqno,
                 secretKey: this.keyPair.secretKey,
                 messages: [internal({
                     value: amount.toString(),
                     to,
-                    body: msg,
+                    body,
                 })]
             });
-        } catch (e) {
-            console.error(e)
+        } catch (e: any) {
+            const errorData = e.response?.data;
+            throw Error(errorData?.error || errorData?.message || errorData || e.message)
         }
     }
 

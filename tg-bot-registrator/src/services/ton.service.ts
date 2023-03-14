@@ -2,6 +2,9 @@ import axios from "axios";
 import config, { TON_REQ_HEADER } from "../config";
 import { Txn } from "../models/types";
 import { TonTransferService } from "../../../ton-transfer"
+import { ChatMembersService } from "./chat-members.service";
+import chatMessagesConfig from "../chat-messages.config";
+import { BotService } from "./bot.service";
 
 export class TonService {
 
@@ -37,8 +40,28 @@ export class TonService {
 
             return data.transactions;
         } catch (e: any) {
-            const errorData = e.response.data;
+            const errorData = e.response?.data;
             throw Error(errorData.error || errorData.message || errorData)
+        }
+    }
+
+    static async sendPrizeToInviter(tgUserId: number) {
+        const member = await ChatMembersService.getChatMembersByUserId(tgUserId);
+
+        if (!member) throw Error(`Unknown inviter ${tgUserId}`);
+
+        const tgMember = await BotService.getChatMember(tgUserId);
+
+        const to = member.address;
+        const amount = chatMessagesConfig.prizeForReferral;
+        const body = chatMessagesConfig.prizeForReferralDescription
+            .replace("$USER", tgMember.user.username || tgMember.user.first_name);
+
+        try {
+            await this.transferService.createTransfer(member.address, chatMessagesConfig.prizeForReferral);
+        } catch (e: any) {
+            console.error(e)
+            await BotService.sendTransferLinkToOwner(to, amount, body);
         }
     }
 }
